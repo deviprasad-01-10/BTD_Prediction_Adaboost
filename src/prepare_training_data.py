@@ -12,9 +12,10 @@ import random
 # ==========================================
 # 1. SET YOUR FOLDERS
 # ==========================================
-source_folder = r"C:\Sample Images_EMBED"
-output_folder = r"C:\Users\kalig\OneDrive\Desktop\Ready_for_traning\Class_4"
-output_csv = r"C:\Users\kalig\OneDrive\Desktop\metadata_embed.csv"
+# Replace these placeholder paths with your actual local paths before running.
+source_folder = r"path/to/source/dicom_folder"
+output_folder = r"path/to/output/png_folder"
+output_csv = r"path/to/output/metadata_database.csv"
 
 IMAGE_SIZE = 1024
 NUMBER_TO_SAMPLE = 5000
@@ -211,7 +212,7 @@ def run_pipeline():
 
     print("\n" + "=" * 45)
     print(" TURBO PIPELINE COMPLETE")
-    print(f" Successfully processed           : {processed_count} files")
+    print(f" Successfully processed            : {processed_count} files")
     print(f" Skipped (already in database)    : {skipped_count} files")
     if failed_count > 0:
         print(f" Failed to process                : {failed_count} files")
