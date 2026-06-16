@@ -2,7 +2,7 @@
 
 ## Breast Tissue Density (BI-RADS) Classification via AdaBoost + MLP Ensemble
 
-**Author:** Kaligatla Devi Prasad
+**Contributers:** Kaligatla Devi Prasad, Palivela Sanjana (Mentor)
 
 **Dataset:** EMBED (Emory Breast Imaging Dataset)
 
