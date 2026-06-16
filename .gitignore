@@ -1,0 +1,19 @@
+# Datasets and Matrices
+*.npy
+*.csv
+*.dcm
+*.png
+data/
+
+# Model Weights and Checkpoints
+*.joblib
+*.pt
+checkpoints/
+model_backups/
+submissions/
+*.tar.gz
+
+# Python Caches
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
