@@ -5,10 +5,11 @@ import pandas as pd
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-MASTER_CSV = r"C:\Users\kalig\Downloads\embed_merged_without_blank_tissueden.csv"
-PIPELINE_DB = r"C:\Users\kalig\OneDrive\Desktop\metadata_embed.csv"
-HARD_DRIVE_BASE = r"D:\Datasets\EMBED" 
-DESTINATION_BASE = r"C:\Sample Images_EMBED"
+# Replace these placeholder paths with your actual local paths before running.
+MASTER_CSV = r"path/to/your/master_dataset.csv"
+PIPELINE_DB = r"path/to/your/metadata_db.csv"
+HARD_DRIVE_BASE = r"path/to/source/drive"
+DESTINATION_BASE = r"path/to/output/destination"
 
 TARGET_PER_CLASS = 5000
 
@@ -105,7 +106,7 @@ def extract_new_images():
         
         clean_relative_path = os.path.normpath(relative_path.lstrip("\\/"))
         
-        # Route the file into a class-specific folder (e.g., C:\Sample Images_EMBED\Class_2\...)
+        # Route the file into a class-specific folder (e.g., /destination_base/Class_2/...)
         class_folder = f"Class_{tissue_class}"
         
         source_file = os.path.normpath(os.path.abspath(os.path.join(HARD_DRIVE_BASE, clean_relative_path)))
@@ -145,7 +146,7 @@ def extract_new_images():
     print(f"Total in Output Folders    : {skipped_count + copied_count} / {len(final_sampled_df)}")
 
     if missing_files:
-        print(f"\nWARNING: Could not find {len(missing_files)} files on the D: drive.")
+        print(f"\nWARNING: Could not find {len(missing_files)} files on the source drive.")
 
 if __name__ == "__main__":
     try:
