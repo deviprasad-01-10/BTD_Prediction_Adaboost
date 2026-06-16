@@ -3,12 +3,13 @@ import numpy as np
 import os
 
 # ── Configuration ────────────────────────────────────────
-CSV_PATH                = r"C:\Users\kalig\Downloads\embed_merged_without_blank_tissueden.csv"
-FEATURES_PATH           = r"C:\Users\kalig\OneDrive\Desktop\features.npy"
-FILENAMES_PATH          = r"C:\Users\kalig\OneDrive\Desktop\filenames.npy"
-ALIGNED_FEATURES_OUTPUT = r"C:\Users\kalig\OneDrive\Desktop\train_X.npy"
-ALIGNED_LABELS_OUTPUT   = r"C:\Users\kalig\OneDrive\Desktop\train_y.npy"
-ALIGNED_GROUPS_OUTPUT   = r"C:\Users\kalig\OneDrive\Desktop\train_groups.npy"
+# Replace these placeholder paths with your actual local paths before running.
+CSV_PATH                = r"path/to/your/metadata.csv"
+FEATURES_PATH           = r"path/to/your/features.npy"
+FILENAMES_PATH          = r"path/to/your/filenames.npy"
+ALIGNED_FEATURES_OUTPUT = r"path/to/output/train_X.npy"
+ALIGNED_LABELS_OUTPUT   = r"path/to/output/train_y.npy"
+ALIGNED_GROUPS_OUTPUT   = r"path/to/output/train_groups.npy"
 
 # ── Load CSV ─────────────────────────────────────────────
 print("Loading CSV metadata...")
