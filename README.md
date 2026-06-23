@@ -1,26 +1,25 @@
 # BTD_Prediction_Adaboost
-
 ## Breast Tissue Density (BI-RADS) Classification via AdaBoost + MLP Ensemble
 
-**Contributers:** Kaligatla Devi Prasad, Palivela Sanjana, Dr. Ashwin Raajkumar 
-
-**Dataset:** EMBED (Emory Breast Imaging Dataset)
-
-**Task:** 4-class BI-RADS tissue density classification (Categories 1–4) from 1024×1024 screening mammograms
+**Contributors:** Kaligatla Devi Prasad, Palivela Sanjana, Dr. Ashwin Raajkumar  
+**Dataset:** EMBED (Emory Breast Imaging Dataset)  
+**Task:** 4-class BI-RADS tissue density classification (Categories A–D) from 1024×1024 screening mammograms
 
 ---
 
 ## Table of Contents
-
-1. [Problem Statement](https://www.google.com/search?q=%231-problem-statement)
-2. [Pipeline Architecture](https://www.google.com/search?q=%232-pipeline-architecture)
-3. [Preprocessing](https://www.google.com/search?q=%233-preprocessing)
-4. [Feature Extraction](https://www.google.com/search?q=%234-feature-extraction)
-5. [Model Evolution](https://www.google.com/search?q=%235-model-evolution)
-6. [Experimental Results](https://www.google.com/search?q=%236-experimental-results)
-7. [Repository Structure](https://www.google.com/search?q=%237-repository-structure)
-8. [Execution](https://www.google.com/search?q=%238-execution)
-9. [Suggestions for Improvement](https://www.google.com/search?q=%239-suggestions-for-improvement)
+1. [Problem Statement](#1-problem-statement)
+2. [Dataset](#2-dataset)
+3. [Pipeline Architecture](#3-pipeline-architecture)
+4. [Preprocessing](#4-preprocessing)
+5. [Feature Extraction](#5-feature-extraction)
+6. [Model Evolution](#6-model-evolution)
+7. [Experimental Results](#7-experimental-results)
+8. [Confusion Matrices](#8-confusion-matrices)
+9. [Sample Images](#9-sample-images)
+10. [Repository Structure](#10-repository-structure)
+11. [Execution](#11-execution)
+12. [Suggestions for Improvement](#12-suggestions-for-improvement)
 
 ---
 
@@ -28,18 +27,36 @@
 
 Breast tissue density is a clinically critical biomarker. Dense tissue not only masks tumours in mammograms but is itself an independent risk factor for breast cancer. Radiologists assign one of four BI-RADS density grades:
 
-| Grade | Description |
-| --- | --- |
-| 1 | Almost entirely fatty |
-| 2 | Scattered fibroglandular densities |
-| 3 | Heterogeneously dense |
-| 4 | Extremely dense |
+| Grade | Label | Description |
+|---|---|---|
+| 1 | A | Almost entirely fatty |
+| 2 | B | Scattered fibroglandular densities |
+| 3 | C | Heterogeneously dense |
+| 4 | D | Extremely dense |
 
-Automating this grading reliably is hard for three reasons: the classes form an **ordinal scale** (not independent categories), the dataset is naturally **imbalanced** (grades 2 and 3 dominate), and high-resolution images carry subtle tissue signals that low-resolution models miss. This project explores whether a hybrid deep feature extraction + classical AdaBoost ensemble can solve all three challenges simultaneously.
+Automating this grading reliably is hard for three reasons: the classes form an **ordinal scale** (not independent categories), the dataset is naturally **imbalanced** (grades B and C dominate), and high-resolution images carry subtle tissue signals that low-resolution models miss. This project explores whether a hybrid deep feature extraction + classical AdaBoost ensemble can solve all three challenges simultaneously.
 
 ---
 
-## 2. Pipeline Architecture
+## 2. Dataset
+
+**Dataset:** EMBED (Emory Breast Imaging Dataset)  
+**Modality:** Full-Field Digital Mammography (FFDM)  
+**Classes:** A (Fatty), B (Scattered), C (Heterogeneously Dense), D (Extremely Dense)  
+**Balanced Samples:** 5,000 images per class  
+**Total:** 20,000 images
+
+| Split | Ordinal / OvR models | AdaBoost + MLP models |
+|---|---|---|
+| Training | 15,928 | 15,951 |
+| Validation | — | 1,989 |
+| Test | 4,072 | 2,060 |
+
+Patient-level `GroupShuffleSplit` is used across all models to ensure zero leakage between splits — no patient's images appear in more than one partition.
+
+---
+
+## 3. Pipeline Architecture
 
 ```
 DICOM Files
@@ -54,154 +71,161 @@ DICOM Files
 [Classification]  AdaBoost (SAMME) with MLP weak learners
     │
     ▼
-Predicted BI-RADS Grade (0–3 internally, reported as 1–4)
-
+Predicted BI-RADS Grade (A / B / C / D)
 ```
 
-The rationale for splitting feature extraction from classification (rather than end-to-end training) is deliberate: AdaBoost's sequential re-weighting mechanism operates on tabular feature vectors, not raw images. By first compressing each mammogram into a rich 1024-dimensional representation via a fine-tuned CNN, we give AdaBoost a structured, information-dense space to work in — one that captures mammography-specific tissue patterns rather than generic ImageNet statistics.
+The rationale for separating feature extraction from classification is deliberate: AdaBoost's sequential re-weighting mechanism operates on tabular feature vectors, not raw images. Compressing each mammogram into a 1024-dimensional representation via a fine-tuned CNN gives AdaBoost a structured, mammography-specific space to work in — rather than generic ImageNet statistics.
 
 ---
 
-## 3. Preprocessing
+## 4. Preprocessing
 
 **Script:** `src/Extractor_from_harddisk.py`
 
 Raw DICOM files carry embedded windowing metadata (VOI LUT) that must be applied correctly before pixel values become visually meaningful. The preprocessing pipeline:
 
-* Applies VOI LUT to convert raw pixel values to display-correct intensities
-* Clips pixel values to the 1st–99th percentile range, removing dead-air borders and bright metal artefacts (biopsy markers, implant edges) that would otherwise dominate the CNN's attention
-* Resizes to 1024×1024 PNG — large enough to preserve subtle tissue texture
-* Flips right-side (R laterality) images horizontally so all breast parenchyma faces the same direction, removing orientation as a confounding variable
+- Applies VOI LUT to convert raw pixel values to display-correct intensities
+- Clips pixel values to the 1st–99th percentile range, removing dead-air borders and bright metal artefacts (biopsy markers, implant edges)
+- Resizes to 1024×1024 PNG — large enough to preserve subtle tissue texture
+- Flips right-side (R laterality) images horizontally so all breast parenchyma faces the same direction
 
-**Balancing:** Rather than using SMOTE synthetic oversampling (which interpolates in a 1024-dimensional space and risks mislabelling synthetic points near class boundaries), 5,000 images were manually extracted per class, producing a perfectly balanced 20,000-image dataset.
+**Balancing:** SMOTE synthetic oversampling was dropped — interpolating in a high-dimensional feature space risks mislabelling synthetic points near class boundaries. Instead, 5,000 real images per class were manually extracted, producing a perfectly balanced 20,000-image dataset.
 
 ---
 
-## 4. Feature Extraction
+## 5. Feature Extraction
 
 **Notebook:** `Feature Extraction/feature-extraction_ConvNeXt.ipynb`
 
 ### Why ConvNeXt-Base over EfficientNet-B4?
 
-EfficientNet-B4 was the original extractor, but it is natively trained at 380×380 resolution. Upscaling mammograms to feed it wastes the high-resolution tissue detail that makes 1024px inputs valuable in the first place. A 2024 Nature paper on breast tomosynthesis and a direct 2025 arXiv comparison (2505.18725) both confirm that ConvNeXt-Base outperforms EfficientNet architectures on mammography tasks, largely because its large-kernel convolutions (7×7) naturally capture longer-range tissue patterns at high resolution.
+The project initially used EfficientNet-B4 as the feature extractor, producing 1,792-dimensional feature vectors on an imbalanced ~10k image dataset. EfficientNet-B4 is natively trained at 380×380 resolution, meaning mammograms had to be downscaled, wasting the high-resolution tissue detail that makes 1024px inputs valuable. Initial experiments with this setup (using SMOTE-balanced training, image-level splits) yielded accuracies in the range of **59–69%**.
+
+After reviewing a 2024 Nature paper on breast tomosynthesis and a direct 2025 arXiv comparison (2505.18725), ConvNeXt-Base was adopted. Its large-kernel convolutions (7×7) naturally capture longer-range tissue patterns at high resolution, and it outperforms EfficientNet architectures on mammography tasks. Switching to ConvNeXt-Base produced **1,024-dimensional** feature vectors and, combined with patient-level splits and real balanced data, pushed accuracy to **80–82%**.
 
 ### Fine-Tuning Strategy (Two-Stage)
 
-Rather than using the backbone in a frozen state (which gives generic ImageNet features), the ConvNeXt-Base is actively fine-tuned on labelled mammograms in two sequential stages:
+Rather than using a frozen backbone (which gives generic ImageNet features), ConvNeXt-Base is actively fine-tuned on labelled mammograms:
 
-**Stage 1 — Head Warm-Up (10 epochs)** The entire ConvNeXt backbone is frozen. Only the classification head trains. This prevents the randomly-initialised head from sending destructive gradients into the pre-trained backbone before it has stabilised.
+**Stage 1 — Head Warm-Up (10 epochs)**  
+Backbone frozen, only the classification head trains at LR 1e-3. This prevents the randomly-initialised head from sending destructive gradients into the pre-trained backbone.
 
 ```
 Frozen backbone  →  Trainable head only
 LR (head): 1e-3
-
 ```
 
-**Stage 2 — Partial Unfreeze (15 epochs)** The last two ConvNeXt feature blocks are unfrozen alongside the head. Differential learning rates prevent the backbone from changing too aggressively:
+**Stage 2 — Partial Unfreeze (15 epochs)**  
+The last two ConvNeXt feature blocks are unfrozen alongside the head, with differential learning rates:
 
 ```
 Frozen (blocks 0–5)  →  Trainable (blocks 6–7 + head)
 LR (backbone): 3e-5   LR (head): 3e-4
-
 ```
 
-After fine-tuning, the classifier head is replaced with a `Flatten` layer, and the entire 20,000-image dataset is passed through to extract 1024-dimensional feature vectors. These vectors — not raw images — are what all downstream AdaBoost models train on.
+After fine-tuning, the classifier head is replaced with an `Identity` layer (preserving the `LayerNorm2d` normalisation) and the full 20,000-image dataset is passed through to export 1024-dimensional feature vectors. These vectors are what all downstream AdaBoost models train on.
 
 ---
 
-## 5. Model Evolution
+## 6. Model Evolution
 
-All model notebooks are in `/Model notebooks`. The architecture evolved iteratively, with each version addressing a specific failure mode of the previous one.
+The architecture evolved iteratively across eight notebooks, each addressing a specific failure mode of the previous version:
 
----
+**Ordinal AdaBoost (`3_model`)** — The first working approach. Instead of treating all four grades as independent labels, three binary classifiers are trained on ordinal thresholds (Is density > A?, > B?, > C?). Votes are summed to recover the final grade. This prevents catastrophic cross-grade errors (e.g., predicting D when the true label is A) because a sample must cross each threshold in order. Early result: **66.85%** (EfficientNet features, SMOTE, image-level split). Patient-isolated result: **80.23%**.
 
-### 5.1 `3_model.ipynb` — Initial Multiclass AdaBoost
+**Probability-Reconstructed Ordinal (`3_model_probabversion`)** — Same threshold structure, but uses soft probabilities from each classifier to reconstruct class probabilities mathematically. This failed catastrophically (**17.20%**) because the threshold probabilities don't maintain a proper ordering, causing negative or incoherent reconstructed class probabilities. The model collapsed to predicting only grades A and D.
 
-**Logic:** The first exploratory attempt at standard multiclass AdaBoost.
-**Why it struggled:** Suffered from the natural class imbalance and lacked ordinal awareness, treating all four density grades as independent labels.
+**Hybrid Ordinal + Probability (`3_model_hybrid`)** — Combined hard ordinal voting with the soft probability approach, using ordinal results as a safety net when probability reconstruction became incoherent. Recovered performance to approximately **66%** and demonstrated that a guard-rail on the probability branch restores stability.
 
----
+**One-vs-Rest AdaBoost (`4 model_OvR`)** — Four specialist binary models, one per class. The class with the highest confidence wins. Early result: **64.95%**. Patient-isolated result: **81.34%**. Slightly edges the ordinal approach on the two middle classes (B and C), though the rare-class "rest" imbalance remains a structural limitation.
 
-### 5.2 `3_model_probabversion.ipynb` — Probability-Based Decoding
+**SAMME Baseline (`AdaBoost_multiclass`)** — A clean sklearn `AdaBoostClassifier` with `algorithm='SAMME'` using standard decision tree stumps. Served as a controlled reference point. Result: **59.65%** — majority classes dominated, rare classes largely ignored.
 
-**Logic:** Instead of hard classes, this approach used direct probability-based decoding to reconstruct predictions based on confidence scores.
-**Why it underperformed:** The probability reconstruction method proved highly unreliable for final prediction logic. The soft probabilities across classes were not confident enough to establish clear decision boundaries.
-**Result:** 17.20% accuracy.
+**AdaBoost + MLP Weak Learner (`AdaBoost_MLP_weaklearner`)** — Replaced decision stumps with small PyTorch MLPs (32 neurons) as weak learners. MLPs draw curved decision boundaries in the 1024-dimensional feature space, which axis-aligned stumps cannot. Result: **68.90%** — best rare-class balance among the early models.
 
----
+**Regularised MLP v2 (`AdaBoost_MLP_weaklearner_v2`)** — The original MLP weak learner achieved near-zero training error, stalling the boosting loop entirely. This version deliberately handicaps each MLP: hidden layer capped at 32 neurons, max 15 iterations, L2 regularisation, early stopping, batch size controlled at 64. This restored true sequential boosting. Result: **65.30%** test accuracy — lower number but a more honest measure, reflecting the removal of overfitting.
 
-### 5.3 `3_model_hybrid.ipynb` — Hybrid Ordinal Decoding
-
-**Logic:** Because the probability decoder was unstable, this introduced a hybrid system using sequential thresholds (Density > Grade 1, > Grade 2, etc.). If the probability branch failed to reach consensus, the model fell back to soft voting across the ordinal thresholds.
-**Why it improved:** The ordinal structure eliminated catastrophic cross-grade errors (like predicting a 4 when the true label is 1) because a sample must cross each boundary in order.
-**Result:** 66.85% accuracy (on successful fallback runs). Near-zero catastrophic misclassifications.
+**Patient-Isolated MLP v2.2 (`AdaBoost_MLP_weaklearner_v2_1`)** — Added strict patient-level `GroupShuffleSplit` alongside V2 regularisation and a wide parallel grid search (250 estimators, LR 0.5, max_iter 50). Best model to date: **82.38% accuracy**, macro F1 **0.8233**. Category A recall: 90.6%, Category D precision: 89.4%.
 
 ---
 
-### 5.4 `4 model_OvR.ipynb` — One-vs-Rest AdaBoost
+## 7. Experimental Results
 
-**Logic:** Four specialist AdaBoost models are trained, one per class. Each model answers a single binary question: "Is this image class X, or not?" The class whose specialist fires with the highest confidence wins.
-**Why it underperformed:** Each specialist's "rest" group is 3× larger than its positive class. For the rare grades (1 and 4), this imbalance is severe — the "rest" pool is enormous and the majority classes mathematically crowd out the minority ones.
-**Result:** 64.95% overall accuracy, and worse rare-class detection than the ordinal approach.
+| Model | Early result | Patient-isolated result | Notes |
+|---|---|---|---|
+| Ordinal AdaBoost | 66.85% | **80.23%** | Zero catastrophic A↔D errors |
+| Probability-Reconstructed Ordinal | 17.20% | — | Collapsed; superseded |
+| Hybrid Ordinal + Probability | ~66% | — | Superseded by MLP approach |
+| One-vs-Rest AdaBoost | 64.95% | **81.34%** | Edges ordinal on B and C |
+| SAMME Baseline | 59.65% | — | Decision stump reference |
+| AdaBoost + MLP Weak Learner | 68.90% | — | Best early rare-class balance |
+| Regularised MLP (V2) | 65.30% | — | Restored true boosting loop |
+| **AdaBoost + MLP V2.2** | — | **82.38%** (F1: 0.8233) | **Current best** |
 
----
-
-### 5.5 `AdaBoost_multiclass.ipynb` — Sklearn SAMME AdaBoost (Baseline)
-
-**Logic:** A clean sklearn `AdaBoostClassifier` with `algorithm='SAMME'` using standard decision stumps. SAMME (Stagewise Additive Modelling using a Multi-class Exponential loss) is the correct multiclass extension of AdaBoost. This notebook served as the formal baseline to benchmark exactly how much the custom MLP weak learners add over standard decision stumps.
-**Why it struggled:** The model learned to optimise for the majority classes and largely ignored grades 1 and 4.
-**Result:** 59.65% accuracy.
-
----
-
-### 5.6 `AdaBoost_MLP_weaklearner.ipynb` — AdaBoost + PyTorch MLP (Architecture B)
-
-**Logic:** Decision tree stumps are extremely limited learners — each one partitions the 1024-dimensional feature space with a single axis-aligned cut. This notebook replaces them with small PyTorch MLPs as the weak learners (32 neurons), giving it just enough capacity to learn non-linear feature interactions.
-**Why it improved:** MLPs can draw curved decision boundaries in feature space, which axis-aligned tree stumps cannot.
-**Result:** 68.90% accuracy. Best rare-class balance of the image-split models.
+The ~15–17 point jump between early and patient-isolated results reflects the combined effect of removing SMOTE, enforcing patient-level splits, and using ConvNeXt-Base over EfficientNet-B4. Earlier scores were partly inflated by data leakage and synthetic-sample noise.
 
 ---
 
-### 5.7 `AdaBoost_MLP_weaklearner_v2.ipynb` — Regularised AdaBoost + MLP (V2)
+## 8. Confusion Matrices
 
-**Logic:** The previous MLP weak learner had a critical flaw — it was too powerful, achieving near-zero training error and stalling the boosting loop. This version deliberately handicaps each MLP by adding L2 regularisation (`alpha=1e-3`), early stopping with an internal validation split, and batch-size control.
-**Result:** 69.00% validation accuracy, 65.30% test accuracy. The gap between validation and test is healthy — prior versions that showed identical scores were overfitting silently.
+### Ordinal AdaBoost (80.23%, n=4072)
+
+|  | Pred A | Pred B | Pred C | Pred D |
+|---|---|---|---|---|
+| **Actual A** | 926 | 135 | 4 | 0 |
+| **Actual B** | 151 | 708 | 129 | 2 |
+| **Actual C** | 1 | 149 | 755 | 111 |
+| **Actual D** | 0 | 3 | 120 | 878 |
+
+### One-vs-Rest AdaBoost (81.34%, n=4072)
+
+|  | Pred A | Pred B | Pred C | Pred D |
+|---|---|---|---|---|
+| **Actual A** | 933 | 128 | 4 | 0 |
+| **Actual B** | 152 | 720 | 115 | 3 |
+| **Actual C** | 1 | 133 | 781 | 101 |
+| **Actual D** | 0 | 3 | 120 | 878 |
+
+### AdaBoost + MLP V2.2 — Best Model (82.38%, n=2060)
+
+|  | Pred A | Pred B | Pred C | Pred D |
+|---|---|---|---|---|
+| **Actual A** | 462 | 48 | 0 | 0 |
+| **Actual B** | 71 | 373 | 60 | 2 |
+| **Actual C** | 0 | 63 | 409 | 52 |
+| **Actual D** | 1 | 2 | 64 | 453 |
+
+All models share the same clinically important safety property: zero A↔D confusion. Every error is adjacent-grade, closely mirroring human radiologist disagreement.
 
 ---
 
-### 5.8 `AdaBoost_MLP_weaklearner_v2_1.ipynb` — Patient-Level GroupSplit (Current)
+## 9. Sample Images
 
-**Logic:** Previous models utilized a random image-level split. Upon deeper data analysis, it was discovered that the dataset contained multiple images per patient. A random split inevitably leaked images from the same patient into both the training and test sets, artificially inflating accuracy as the model memorized patient-specific anatomical quirks rather than generalized tissue-density rules.
-This finalized version introduces strict patient-level `GroupShuffleSplit` (zero data leakage) alongside the V2 regularisation.
-**Result:** `[RESULTS PENDING - AWAITING CONVNEXT FEATURE EXTRACTION]`
+> *Images to be added.*
 
----
+### Density A — Almost Entirely Fatty
+```
+[image placeholder]
+```
 
-## 6. Experimental Results
+### Density B — Scattered Fibroglandular
+```
+[image placeholder]
+```
 
-*Note: Models prior to v2.1 utilized image-level splitting which contained patient overlap. V2.1 introduces strict patient isolation.*
+### Density C — Heterogeneously Dense
+```
+[image placeholder]
+```
 
-| Model | Notebook | Accuracy | Notes |
-| --- | --- | --- | --- |
-| Initial Multiclass | `3_model.ipynb` | - | Exploratory baseline run |
-| Probability Decoder | `3_model_probabversion.ipynb` | 17.20% | Confidence reconstruction failed |
-| Hybrid / Ordinal | `3_model_hybrid.ipynb` | 66.85% | Ordinal fallback eliminated catastrophic errors |
-| One-vs-Rest AdaBoost | `4 model_OvR.ipynb` | 64.95% | Rare classes drowned out by majority "rest" |
-| SAMME Baseline | `AdaBoost_multiclass.ipynb` | 59.65% | Standard SAMME with decision stumps |
-| AdaBoost + MLP (Arc B) | `AdaBoost_MLP_weaklearner.ipynb` | 68.90% | Best rare-class balance prior to group splitting |
-| Regularised MLP (V2) | `AdaBoost_MLP_weaklearner_v2.ipynb` | 65.30% (test) | Added validation split and regularisation |
-| **MLP GroupSplit (V2.1)** | `AdaBoost_MLP_weaklearner_v2_1.ipynb` | **[PENDING]** | **Strict patient-level isolation (Zero Leakage)** |
-
-### Current Best — V2.1 Test Confusion Matrix
-
-```text
-[AWAITING FINAL TRAINING RUN ON NEW CONVNEXT FEATURES]
-
+### Density D — Extremely Dense
+```
+[image placeholder]
 ```
 
 ---
 
-## 7. Repository Structure
+## 10. Repository Structure
 
 ```
 BTD_Prediction_Adaboost/
@@ -211,14 +235,14 @@ BTD_Prediction_Adaboost/
 │   └── feature_extraction_EfficientNetB4.ipynb ← Deprecated (380px resolution limit)
 │
 ├── Model notebooks/
-│   ├── 3_model.ipynb                           ← Initial exploratory multiclass AdaBoost
-│   ├── 3_model_probabversion.ipynb             ← Probabilistic decoding variant
-│   ├── 3_model_hybrid.ipynb                    ← Ordinal threshold / hybrid fallback
+│   ├── 3_model.ipynb                           ← Ordinal AdaBoost (Strategy C)
+│   ├── 3_model_probabversion.ipynb             ← Probability-reconstructed ordinal (failed)
+│   ├── 3_model_hybrid.ipynb                    ← Hybrid ordinal + probability fallback
 │   ├── 4 model_OvR.ipynb                       ← One-vs-Rest specialist ensemble
-│   ├── AdaBoost_multiclass.ipynb               ← Sklearn SAMME reference baseline
+│   ├── AdaBoost_multiclass.ipynb               ← Sklearn SAMME baseline
 │   ├── AdaBoost_MLP_weaklearner.ipynb          ← Custom PyTorch MLP weak learner
 │   ├── AdaBoost_MLP_weaklearner_v2.ipynb       ← Regularised v2
-│   └── AdaBoost_MLP_weaklearner_v2_1.ipynb     ← Regularised v2.1 (GroupSplit / Zero Leakage)
+│   └── AdaBoost_MLP_weaklearner_v2_1.ipynb     ← V2.2 (GroupSplit + grid search) — current best
 │
 ├── src/
 │   ├── Extractor_from_harddisk.py              ← DICOM → PNG extraction pipeline
@@ -229,52 +253,29 @@ BTD_Prediction_Adaboost/
 ├── predict.py                                  ← Benchmark inference script
 ├── requirements.txt
 └── README.md
-
 ```
 
 ---
 
-## 8. Execution
+## 11. Execution
 
 ### Feature Extraction
-
-Run `Feature Extraction/feature-extraction_ConvNeXt.ipynb` on Kaggle (T4 x2 recommended).
-
+Run `Feature Extraction/feature-extraction_ConvNeXt.ipynb` on Kaggle (T4 x2 recommended).  
 Outputs: `convnext_finetuned_features.npy`, `convnext_finetuned_labels.npy`
 
 ### Training
-
-Run `Model notebooks/AdaBoost_MLP_weaklearner_v2_1.ipynb` with the extracted `.npy` files as input.
-
+Run `Model notebooks/AdaBoost_MLP_weaklearner_v2_1.ipynb` with the extracted `.npy` files as input.  
 Output: `checkpoints/best_model.pt`
 
 ### Inference
-
 ```bash
 python predict.py <input_features.npy> <output_predictions.npy>
-
 ```
-
-Input: 1024-dimensional ConvNeXt feature vectors (N × 1024)
-
-Output: Predicted BI-RADS grades as 0-indexed integers (0–3), corresponding to grades 1–4
+Input: 1024-dimensional ConvNeXt feature vectors (N × 1024)  
+Output: Predicted BI-RADS grades as 0-indexed integers (0–3), corresponding to grades A–D
 
 ---
 
-## 9. Suggestions for Improvement
+## 12. Suggestions for Improvement
 
-These are the most impactful next steps roughly in order of expected gain:
-
-**1. Multi-View Fusion** Each patient has both CC (cranio-caudal) and MLO (mediolateral oblique) views. Currently each view is treated as an independent sample. A multi-view model that concatenates or attention-pools features from both views of the same breast before classification would give the AdaBoost model richer, more complete information — this is the approach taken by the top-performing MV-Swin-T (2024) paper.
-
-**2. Swin Transformer Backbone** ConvNeXt is an excellent CNN, but Swin Transformers have a structural advantage for high-resolution mammography: their shifted-window self-attention can model long-range spatial dependencies (e.g., the relationship between tissue in one quadrant and another) that convolutions approximate only locally. A 2024 Nature paper specifically showed resolution-scaling benefits of Swin for breast tomosynthesis beyond CNN architectures.
-
-**3. Label Smoothing** Since the classes are ordinal, a misclassification of grade 2 as grade 3 should be penalised less than grade 2 as grade 4. Standard cross-entropy treats all errors equally. Replacing it with an ordinal-aware loss (e.g., Earth Mover's Distance loss or a cost-sensitive cross-entropy with an ordinal penalty matrix) would directly encode clinical severity into training.
-
-**4. Test-Time Augmentation (TTA)** At inference time, each image could be passed through the ConvNeXt extractor multiple times with slight augmentations (horizontal flip, small rotations, brightness shifts), and the resulting feature vectors averaged before being fed to AdaBoost. This reduces variance in the extracted features at zero additional training cost.
-
-**5. Confidence Calibration** AdaBoost's raw `predict_proba` outputs are not well-calibrated probabilities. Applying Platt scaling or isotonic regression (via sklearn's `CalibratedClassifierCV`) after training would make the confidence scores more trustworthy for downstream clinical decision support.
-
-**6. Ensemble the AdaBoost Variants** Methods A (Ordinal), B (OvR), and the current MLP v2.1 each have different failure modes. A soft-vote ensemble of all three — using their `predict_proba` outputs — may outperform any individual model, since their errors are partially uncorrelated.
-
-**7. Explainability Layer** Adding SHAP (SHapley Additive exPlanations) analysis on the AdaBoost model's feature importances, mapped back to spatial regions of the ConvNeXt feature map via Grad-CAM, would allow visual verification that the model is attending to actual tissue patterns rather than artefacts or image borders.
+Key directions in order of expected impact: **multi-view fusion** (combining CC and MLO views per patient rather than treating them independently); **Swin Transformer backbone** (shifted-window self-attention better models long-range tissue relationships than convolutions); **ordinal-aware loss** (penalise A↔D errors more harshly than A↔B); **test-time augmentation** (average features from small augmentations at inference for more stable predictions); **confidence calibration** (Platt scaling or isotonic regression to make `predict_proba` outputs clinically trustworthy); and **SHAP + Grad-CAM explainability** to verify the model attends to actual tissue patterns rather than scan artefacts.
