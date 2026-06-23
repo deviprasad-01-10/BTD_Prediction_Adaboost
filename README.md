@@ -262,7 +262,7 @@ BTD_Prediction_Adaboost/
 ## 11. Execution
 
 ### Feature Extraction
-Run `Feature Extraction/feature-extraction_ConvNeXt.ipynb` on Kaggle (T4 x2 recommended).  
+Run `Feature Extraction/feature-extraction_ConvNeXt.ipynb`   
 Outputs: `convnext_finetuned_features.npy`, `convnext_finetuned_labels.npy`
 
 ### Training
