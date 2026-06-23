@@ -48,8 +48,11 @@ def predict(features_array):
     # 3. Predict (Outputs 1, 2, 3, 4)
     raw_predictions = model.predict(features_array)
     
-    # 4. BENCHMARK FIX: Shift 1,2,3,4 down to 0,1,2,3 for scoring compliance
-    return raw_predictions - 1
+    # 4. Map 1, 2, 3, 4 to 'A', 'B', 'C', 'D'
+    label_map = np.array(['A', 'B', 'C', 'D'])
+    indices = raw_predictions.astype(int) - 1  # Shift to 0, 1, 2, 3 for array indexing
+    
+    return label_map[indices]
 
 # ==============================================================================
 # 3. COMMAND LINE EXECUTION (Used by the benchmark bash script)
@@ -65,4 +68,4 @@ if __name__ == "__main__":
     X_test = np.load(input_path)
     final_preds = predict(X_test)
     np.save(output_path, final_preds)
-    print(f"Predictions successfully shifted and saved to {output_path}")
+    print(f"Predictions successfully mapped to A/B/C/D and saved to {output_path}")
