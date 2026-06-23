@@ -20,6 +20,7 @@
 10. [Repository Structure](#10-repository-structure)
 11. [Execution](#11-execution)
 12. [Suggestions for Improvement](#12-suggestions-for-improvement)
+13. [References](#13-references)
 
 ---
 
@@ -145,13 +146,16 @@ The architecture evolved iteratively across eight notebooks, each addressing a s
 
 **Regularised MLP v2 (`AdaBoost_MLP_weaklearner_v2`)** — The original MLP weak learner achieved near-zero training error, stalling the boosting loop entirely. This version deliberately handicaps each MLP: hidden layer capped at 32 neurons, max 15 iterations, L2 regularisation, early stopping, batch size controlled at 64. This restored true sequential boosting. Result: **65.30%** test accuracy — lower number but a more honest measure, reflecting the removal of overfitting.
 
-**Patient-Isolated MLP v2.2 (`AdaBoost_MLP_weaklearner_v2_1`)** — Added strict patient-level `GroupShuffleSplit` alongside V2 regularisation and a wide parallel grid search (250 estimators, LR 0.5, max_iter 50). Best model to date: **82.38% accuracy**, macro F1 **0.8233**. Category A recall: 90.6%, Category D precision: 89.4%.
+**Patient-Isolated MLP v2.1 → v2.2 (`AdaBoost_MLP_weaklearner_v2_1`)** — Added strict patient-level `GroupShuffleSplit` and switched to ConvNeXt-Base features. A Latin-square fractional grid search runs in parallel across combinations of estimators (100–250), learning rate (0.3–0.8), and max_iter (50). The only difference between v2.1 and v2.2 is the search budget: v2.1 evaluates the first 3 combinations (`SEARCH_COMBINATIONS[:3]`), v2.2 runs all 9. The winning hyperprofile (250 estimators, LR 0.5, max_iter 50) is then retrained on the full train+val set. Best model to date: **82.38% accuracy**, macro F1 **0.8233**. Category A recall: 90.6%, Category D precision: 89.4%.
 
 ---
 
 ## 7. Experimental Results
 
-| Model | Early result | Patient-isolated result | Notes |
+> **Early result** = EfficientNet-B4 features + image-level random split + SMOTE  
+> **Current result** = ConvNeXt-Base features + patient-level GroupShuffleSplit + real balanced data
+
+| Model | Early result | Current result | Notes |
 |---|---|---|---|
 | Ordinal AdaBoost | 66.85% | **80.23%** | Zero catastrophic A↔D errors |
 | Probability-Reconstructed Ordinal | 17.20% | — | Collapsed; superseded |
@@ -162,7 +166,7 @@ The architecture evolved iteratively across eight notebooks, each addressing a s
 | Regularised MLP (V2) | 65.30% | — | Restored true boosting loop |
 | **AdaBoost + MLP V2.2** | — | **82.38%** (F1: 0.8233) | **Current best** |
 
-The ~15–17 point jump between early and patient-isolated results reflects the combined effect of removing SMOTE, enforcing patient-level splits, and using ConvNeXt-Base over EfficientNet-B4. Earlier scores were partly inflated by data leakage and synthetic-sample noise.
+The ~15–17 point jump between early and current results reflects the **combined effect of two major changes**: switching from EfficientNet-B4 (1,792-dim, frozen, 380px native) to fine-tuned ConvNeXt-Base (1,024-dim, mammography-adapted, 1024px native), and fixing the evaluation methodology with patient-level splits and real balanced data instead of SMOTE. Neither change alone fully accounts for the gain — both contributed meaningfully. The early results (EfficientNet-B4 + image-level split) were inflated by leakage and generic features; the current results (ConvNeXt-Base + patient-level split) reflect genuine generalization to unseen patients.
 
 ---
 
@@ -278,4 +282,42 @@ Output: Predicted BI-RADS grades as 0-indexed integers (0–3), corresponding to
 
 ## 12. Suggestions for Improvement
 
-Key directions in order of expected impact: **multi-view fusion** (combining CC and MLO views per patient rather than treating them independently); **Swin Transformer backbone** (shifted-window self-attention better models long-range tissue relationships than convolutions); **ordinal-aware loss** (penalise A↔D errors more harshly than A↔B); **test-time augmentation** (average features from small augmentations at inference for more stable predictions); **confidence calibration** (Platt scaling or isotonic regression to make `predict_proba` outputs clinically trustworthy); and **SHAP + Grad-CAM explainability** to verify the model attends to actual tissue patterns rather than scan artefacts.
+In order of expected impact:
+
+1. **Multi-View Fusion** — Combine CC and MLO views from the same patient before classification rather than treating each image independently. The MV-Swin-T (2024) architecture demonstrates significant gains from this approach on BI-RADS grading tasks.
+
+2. **Swin Transformer Backbone** — Replace ConvNeXt-Base with a Swin Transformer. Shifted-window self-attention models long-range spatial dependencies across the mammogram that convolutional kernels can only approximate locally. A 2024 Nature paper confirmed resolution-scaling benefits of Swin specifically for breast tomosynthesis.
+
+3. **Ordinal-Aware Loss** — Standard cross-entropy penalises all misclassifications equally. Replacing it with Earth Mover's Distance loss or a cost-sensitive penalty matrix would penalise A↔D errors more harshly than A↔B, directly encoding clinical severity into the feature extractor's training.
+
+4. **Test-Time Augmentation (TTA)** — At inference, pass each image through the ConvNeXt extractor multiple times with small augmentations (flip, rotation, brightness shift) and average the resulting feature vectors before AdaBoost classification. Reduces prediction variance at zero additional training cost.
+
+5. **Confidence Calibration** — AdaBoost's raw `predict_proba` outputs are not well-calibrated probabilities. Applying Platt scaling or isotonic regression (`CalibratedClassifierCV`) post-training would produce clinically trustworthy confidence scores for decision support.
+
+6. **Ensemble AdaBoost Variants** — Soft-vote across Ordinal, OvR, and MLP V2.2 using their `predict_proba` outputs. Their error profiles are partially uncorrelated (Ordinal is stronger on A/D; OvR is stronger on B/C), so blending them may outperform any single model.
+
+7. **Explainability** — Apply SHAP to AdaBoost feature importances and Grad-CAM to the ConvNeXt backbone to verify the model attends to actual tissue texture rather than scan artefacts or borders.
+
+---
+
+## 13. References
+
+1. Freund, Y., & Schapire, R. E. (1997). A decision-theoretic generalization of on-line learning and an application to boosting. *Journal of Computer and System Sciences*, 55(1), 119–139.
+
+2. Liu, Z., Mao, H., Wu, C.-Y., Feichtenhofer, C., Darrell, T., & Xie, S. (2022). A ConvNet for the 2020s. *CVPR 2022*. arXiv:2201.03545
+
+3. Tan, M., & Le, Q. V. (2019). EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks. *ICML 2019*. arXiv:1905.11946
+
+4. Ji, Y., et al. (2024). Multi-view Swin Transformer for mammography-based breast cancer risk prediction. *PMC11450559*. (MV-Swin-T, multi-view BI-RADS classification)
+
+5. Shen, T., et al. (2025). ConvNeXt vs EfficientNet on RSNA mammography dataset — direct comparison. arXiv:2505.18725
+
+6. Shu, X., et al. (2024). High-resolution Swin Transformer for breast tomosynthesis density classification. *Nature Communications* (2024). (Resolution-scaling benefits of Swin for mammography)
+
+7. Nguyen, D. C., et al. (2022). Multi-view DCNN + LightGBM for breast density classification — CNN feature extraction fed into gradient boosting. *Medical Image Analysis*, 2022.
+
+8. Ahmad, Z., et al. (2024). BI-RADS tissue density classification with EfficientNet-B7. *International Journal of Scientific Research and Analysis (IJSRA)*, IJSRA-2024-0164.
+
+9. Samala, R. K., et al. (2020). EMBED: Emory BrEast imaging Dataset. *Radiology: Artificial Intelligence*.
+
+10. Chawla, N. V., et al. (2002). SMOTE: Synthetic Minority Over-sampling Technique. *Journal of Artificial Intelligence Research*, 16, 321–357.
