@@ -59,14 +59,14 @@ Patient-level `GroupShuffleSplit` is used across all models to ensure zero leaka
 
 ## 3. Pipeline Architecture
 
-```
+```text
 DICOM Files
     │
     ▼
 [Preprocessing]  VOI LUT + 1–99% percentile clip → 1024×1024 PNG
     │
     ▼
-[Feature Extraction]  Fine-tuned ConvNeXt-Base → 1024-dim feature vector
+[Feature Extraction]  Fine-tuned ConvNeXt-Tiny → 1024-dim feature vector
     │
     ▼
 [Classification]  AdaBoost (SAMME) with MLP weak learners
@@ -98,28 +98,26 @@ Raw DICOM files carry embedded windowing metadata (VOI LUT) that must be applied
 
 **Notebook:** `Feature Extraction/feature-extraction_ConvNeXt.ipynb`
 
-### Why ConvNeXt-Base over EfficientNet-B4?
+### Why ConvNeXt-Tiny over EfficientNet-B4?
 
 The project initially used EfficientNet-B4 as the feature extractor, producing 1,792-dimensional feature vectors on an imbalanced ~10k image dataset. EfficientNet-B4 is natively trained at 380×380 resolution, meaning mammograms had to be downscaled, wasting the high-resolution tissue detail that makes 1024px inputs valuable. Initial experiments with this setup (using SMOTE-balanced training, image-level splits) yielded accuracies in the range of **59–69%**.
 
-After reviewing a 2024 Nature paper on breast tomosynthesis and a direct 2025 arXiv comparison (2505.18725), ConvNeXt-Base was adopted. Its large-kernel convolutions (7×7) naturally capture longer-range tissue patterns at high resolution, and it outperforms EfficientNet architectures on mammography tasks. Switching to ConvNeXt-Base produced **1,024-dimensional** feature vectors and, combined with patient-level splits and real balanced data, pushed accuracy to **80–82%**.
+After reviewing a 2024 Nature paper on breast tomosynthesis and a direct 2025 arXiv comparison (2505.18725), ConvNeXt-Tiny was adopted. Its large-kernel convolutions (7×7) naturally capture longer-range tissue patterns at high resolution, and it outperforms EfficientNet architectures on mammography tasks. Switching to ConvNeXt-Tiny produced **1,024-dimensional** feature vectors and, combined with patient-level splits and real balanced data, pushed accuracy to **80–82%**.
 
 ### Fine-Tuning Strategy (Two-Stage)
 
-Rather than using a frozen backbone (which gives generic ImageNet features), ConvNeXt-Base is actively fine-tuned on labelled mammograms:
+Rather than using a frozen backbone (which gives generic ImageNet features), ConvNeXt-Tiny is actively fine-tuned on labelled mammograms:
 
-**Stage 1 — Head Warm-Up (10 epochs)**  
-Backbone frozen, only the classification head trains at LR 1e-3. This prevents the randomly-initialised head from sending destructive gradients into the pre-trained backbone.
+**Stage 1 — Head Warm-Up (10 epochs)** Backbone frozen, only the classification head trains at LR 1e-3. This prevents the randomly-initialised head from sending destructive gradients into the pre-trained backbone.
 
-```
+```text
 Frozen backbone  →  Trainable head only
 LR (head): 1e-3
 ```
 
-**Stage 2 — Partial Unfreeze (15 epochs)**  
-The last two ConvNeXt feature blocks are unfrozen alongside the head, with differential learning rates:
+**Stage 2 — Partial Unfreeze (15 epochs)** The last two ConvNeXt feature blocks are unfrozen alongside the head, with differential learning rates:
 
-```
+```text
 Frozen (blocks 0–5)  →  Trainable (blocks 6–7 + head)
 LR (backbone): 3e-5   LR (head): 3e-4
 ```
@@ -146,14 +144,14 @@ The architecture evolved iteratively across eight notebooks, each addressing a s
 
 **Regularised MLP v2 (`AdaBoost_MLP_weaklearner_v2`)** — The original MLP weak learner achieved near-zero training error, stalling the boosting loop entirely. This version deliberately handicaps each MLP: hidden layer capped at 32 neurons, max 15 iterations, L2 regularisation, early stopping, batch size controlled at 64. This restored true sequential boosting. Result: **65.30%** test accuracy — lower number but a more honest measure, reflecting the removal of overfitting.
 
-**Patient-Isolated MLP v2.1 → v2.2 (`AdaBoost_MLP_weaklearner_v2_1`)** — Added strict patient-level `GroupShuffleSplit` and switched to ConvNeXt-Base features. A Latin-square fractional grid search runs in parallel across combinations of estimators (100–250), learning rate (0.3–0.8), and max_iter (50). The only difference between v2.1 and v2.2 is the search budget: v2.1 evaluates the first 3 combinations (`SEARCH_COMBINATIONS[:3]`), v2.2 runs all 9. The winning hyperprofile (250 estimators, LR 0.5, max_iter 50) is then retrained on the full train+val set. Best model to date: **82.38% accuracy**, macro F1 **0.8233**. Category A recall: 90.6%, Category D precision: 89.4%.
+**Patient-Isolated MLP v2.1 → v2.2 (`AdaBoost_MLP_weaklearner_v2_1`)** — Added strict patient-level `GroupShuffleSplit` and switched to ConvNeXt-Tiny features. A Latin-square fractional grid search runs in parallel across combinations of estimators (100–250), learning rate (0.3–0.8), and max_iter (50). The only difference between v2.1 and v2.2 is the search budget: v2.1 evaluates the first 3 combinations (`SEARCH_COMBINATIONS[:3]`), v2.2 runs all 9. The winning hyperprofile (250 estimators, LR 0.5, max_iter 50) is then retrained on the full train+val set. Best model to date: **82.38% accuracy**, macro F1 **0.8233**. Category A recall: 90.6%, Category D precision: 89.4%.
 
 ---
 
 ## 7. Experimental Results
 
 > **Early result** = EfficientNet-B4 features + image-level random split + SMOTE  
-> **Current result** = ConvNeXt-Base features + patient-level GroupShuffleSplit + real balanced data
+> **Current result** = ConvNeXt-Tiny features + patient-level GroupShuffleSplit + real balanced data
 
 | Model | Early result | Current result | Notes |
 |---|---|---|---|
@@ -166,7 +164,7 @@ The architecture evolved iteratively across eight notebooks, each addressing a s
 | Regularised MLP (V2) | 65.30% | — | Restored true boosting loop |
 | **AdaBoost + MLP V2.2** | — | **82.38%** (F1: 0.8233) | **Current best** |
 
-The ~15–17 point jump between early and current results reflects the **combined effect of two major changes**: switching from EfficientNet-B4 (1,792-dim, frozen, 380px native) to fine-tuned ConvNeXt-Base (1,024-dim, mammography-adapted, 1024px native), and fixing the evaluation methodology with patient-level splits and real balanced data instead of SMOTE. Neither change alone fully accounts for the gain — both contributed meaningfully. The early results (EfficientNet-B4 + image-level split) were inflated by leakage and generic features; the current results (ConvNeXt-Base + patient-level split) reflect genuine generalization to unseen patients.
+The ~15–17 point jump between early and current results reflects the **combined effect of two major changes**: switching from EfficientNet-B4 (1,792-dim, frozen, 380px native) to fine-tuned ConvNeXt-Tiny (1,024-dim, mammography-adapted, 1024px native), and fixing the evaluation methodology with patient-level splits and real balanced data instead of SMOTE. Neither change alone fully accounts for the gain — both contributed meaningfully. The early results (EfficientNet-B4 + image-level split) were inflated by leakage and generic features; the current results (ConvNeXt-Tiny + patient-level split) reflect genuine generalization to unseen patients.
 
 ---
 
@@ -208,22 +206,22 @@ All models share the same clinically important safety property: zero A↔D confu
 > *Images to be added.*
 
 ### Density A — Almost Entirely Fatty
-```
+```text
 [image placeholder]
 ```
 
 ### Density B — Scattered Fibroglandular
-```
+```text
 [image placeholder]
 ```
 
 ### Density C — Heterogeneously Dense
-```
+```text
 [image placeholder]
 ```
 
 ### Density D — Extremely Dense
-```
+```text
 [image placeholder]
 ```
 
@@ -231,7 +229,7 @@ All models share the same clinically important safety property: zero A↔D confu
 
 ## 10. Repository Structure
 
-```
+```text
 BTD_Prediction_Adaboost/
 │
 ├── Feature Extraction/
@@ -286,7 +284,7 @@ In order of expected impact:
 
 1. **Multi-View Fusion** — Combine CC and MLO views from the same patient before classification rather than treating each image independently. The MV-Swin-T (2024) architecture demonstrates significant gains from this approach on BI-RADS grading tasks.
 
-2. **Swin Transformer Backbone** — Replace ConvNeXt-Base with a Swin Transformer. Shifted-window self-attention models long-range spatial dependencies across the mammogram that convolutional kernels can only approximate locally. A 2024 Nature paper confirmed resolution-scaling benefits of Swin specifically for breast tomosynthesis.
+2. **Swin Transformer Backbone** — Replace ConvNeXt-Tiny with a Swin Transformer. Shifted-window self-attention models long-range spatial dependencies across the mammogram that convolutional kernels can only approximate locally. A 2024 Nature paper confirmed resolution-scaling benefits of Swin specifically for breast tomosynthesis.
 
 3. **Ordinal-Aware Loss** — Standard cross-entropy penalises all misclassifications equally. Replacing it with Earth Mover's Distance loss or a cost-sensitive penalty matrix would penalise A↔D errors more harshly than A↔B, directly encoding clinical severity into the feature extractor's training.
 
